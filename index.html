@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuckDB Explorer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:        #0d0f14;
+      --surface:   #151820;
+      --panel:     #1c2030;
+      --border:    #252a38;
+      --accent:    #f5c542;
+      --accent2:   #5b8af5;
+      --danger:    #e05c5c;
+      --success:   #4eca8b;
+      --text:      #e2e6f0;
+      --muted:     #7880a0;
+      --mono:      'IBM Plex Mono', monospace;
+      --sans:      'Inter', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; }
+
+    /* ── Layout ── */
+    .app { display: grid; grid-template-rows: 52px 1fr; height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 0 20px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .logo { display: flex; align-items: center; gap: 8px; }
+    .logo svg { flex-shrink: 0; }
+    .logo-text { font-family: var(--mono); font-weight: 600; font-size: 15px; letter-spacing: -.3px; }
+    .logo-text span { color: var(--accent); }
+    .tagline { font-size: 12px; color: var(--muted); margin-left: 4px; }
+    header .spacer { flex: 1; }
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-family: var(--mono); color: var(--muted);
+      background: var(--panel); border: 1px solid var(--border);
+      padding: 4px 10px; border-radius: 99px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .dot.ready   { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .dot.loading { background: var(--accent);  box-shadow: 0 0 6px var(--accent); animation: pulse 1s ease-in-out infinite; }
+    .dot.error   { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── Main panel ── */
+    main { display: grid; grid-template-columns: 240px 1fr; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    aside {
+      background: var(--surface); border-right: 1px solid var(--border);
+      overflow-y: auto; padding: 14px 0;
+    }
+    .sidebar-section { padding: 0 14px; margin-bottom: 18px; }
+    .sidebar-label { font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .file-drop {
+      border: 1.5px dashed var(--border); border-radius: 8px;
+      padding: 20px 12px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background .2s; font-size: 12px; color: var(--muted);
+    }
+    .file-drop:hover, .file-drop.over { border-color: var(--accent); background: rgba(245,197,66,.05); color: var(--accent); }
+    .file-drop input { display: none; }
+    .file-drop .icon { font-size: 22px; margin-bottom: 6px; }
+    .file-name { font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: 6px; word-break: break-all; }
+
+    .table-list { list-style: none; }
+    .table-list li {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 14px; cursor: pointer; border-radius: 0;
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+      transition: background .15s, color .15s;
+    }
+    .table-list li:hover, .table-list li.active { background: var(--panel); color: var(--text); }
+    .table-list li.active { border-left: 2px solid var(--accent); padding-left: 12px; color: var(--accent); }
+    .table-icon { font-size: 13px; }
+
+    /* ── Content ── */
+    .content { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Editor */
+    .editor-area {
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+      background: var(--panel); flex-shrink: 0;
+    }
+    .editor-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .editor-header .label { font-size: 11px; color: var(--muted); font-family: var(--mono); flex: 1; }
+    textarea#query {
+      width: 100%; background: var(--bg); color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      font-family: var(--mono); font-size: 13px; line-height: 1.6;
+      padding: 10px 12px; resize: vertical; min-height: 80px;
+      outline: none; transition: border-color .2s;
+    }
+    textarea#query:focus { border-color: var(--accent2); }
+    .editor-footer { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer;
+      font-family: var(--sans); font-size: 13px; font-weight: 500; transition: .15s;
+    }
+    .btn-primary { background: var(--accent); color: #0d0f14; }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-primary:disabled { opacity: .4; cursor: not-allowed; filter: none; }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+    .exec-time { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-left: auto; }
+
+    /* Results */
+    .results-area { flex: 1; overflow: auto; padding: 16px; }
+    .result-meta { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+    .result-badge {
+      font-size: 11px; font-family: var(--mono); padding: 3px 8px; border-radius: 4px;
+    }
+    .result-badge.ok  { background: rgba(78,202,139,.12); color: var(--success); }
+    .result-badge.err { background: rgba(224,92,92,.12);  color: var(--danger); }
+    .row-count { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+    thead th {
+      padding: 8px 12px; text-align: left; font-family: var(--mono); font-weight: 600;
+      font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th .col-type { font-weight: 400; opacity: .55; margin-left: 4px; }
+    tbody tr { border-bottom: 1px solid rgba(255,255,255,.035); transition: background .1s; }
+    tbody tr:hover { background: rgba(255,255,255,.03); }
+    tbody td { padding: 7px 12px; font-family: var(--mono); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    td.null { color: var(--muted); font-style: italic; }
+    td.num  { color: var(--accent2); text-align: right; }
+    td.bool { color: var(--accent); }
+    .pagination { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 12px; color: var(--muted); }
+    .pagination button { background: var(--panel); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+    .pagination button:disabled { opacity: .35; cursor: not-allowed; }
+    .pagination .page-info { font-family: var(--mono); }
+
+    .placeholder {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 10px; color: var(--muted); text-align: center;
+    }
+    .placeholder .big { font-size: 38px; }
+    .placeholder h3 { font-size: 15px; color: var(--text); }
+    .placeholder p  { font-size: 12px; max-width: 280px; line-height: 1.6; }
+
+    .error-msg { background: rgba(224,92,92,.08); border: 1px solid rgba(224,92,92,.25); border-radius: 6px; padding: 12px 14px; font-family: var(--mono); font-size: 12px; color: var(--danger); line-height: 1.5; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <rect width="28" height="28" rx="6" fill="#f5c542" opacity=".15"/>
+        <path d="M14 5C9.03 5 5 7.24 5 10v8c0 2.76 4.03 5 9 5s9-2.24 9-5v-8c0-2.76-4.03-5-9-5z" stroke="#f5c542" stroke-width="1.5" fill="none"/>
+        <ellipse cx="14" cy="10" rx="9" ry="5" stroke="#f5c542" stroke-width="1.5" fill="none"/>
+        <path d="M5 14c0 2.76 4.03 5 9 5s9-2.24 9-5" stroke="#f5c542" stroke-width="1.5" stroke-dasharray="2 2"/>
+      </svg>
+      <span class="logo-text">Duck<span>DB</span> Explorer</span>
+      <span class="tagline">— runs in your browser</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="status-pill">
+      <div class="dot loading" id="statusDot"></div>
+      <span id="statusText">Initializing…</span>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main>
+    <!-- Sidebar -->
+    <aside>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Data source</div>
+        <label class="file-drop" id="dropZone">
+          <div class="icon">🗄️</div>
+          <div>Drop a <code>.db</code> or <code>.parquet</code> file<br/>or click to browse</div>
+          <div class="file-name" id="fileName"></div>
+          <input type="file" id="fileInput" accept=".db,.duckdb,.parquet,.csv" />
+        </label>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Tables</div>
+        <ul class="table-list" id="tableList">
+          <li style="padding: 6px 14px; font-size:11px;">No file loaded</li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Content -->
+    <div class="content">
+      <!-- SQL Editor -->
+      <div class="editor-area">
+        <div class="editor-header">
+          <span class="label">▸ SQL Query</span>
+        </div>
+        <textarea id="query" spellcheck="false" placeholder="SELECT * FROM my_table LIMIT 100;"></textarea>
+        <div class="editor-footer">
+          <button class="btn btn-primary" id="runBtn" disabled>
+            ▶ Run
+          </button>
+          <button class="btn btn-ghost" id="clearBtn">Clear</button>
+          <span class="exec-time" id="execTime"></span>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div class="results-area" id="resultsArea">
+        <div class="placeholder">
+          <div class="big">🦆</div>
+          <h3>Ready to quack</h3>
+          <p>Load a <strong>.db</strong>, <strong>.parquet</strong>, or <strong>.csv</strong> file and run a query to explore your data.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- DuckDB WASM (ESM via CDN) -->
+<script type="module">
+  import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
+
+  // ── State ──────────────────────────────────────────────
+  let db = null, conn = null, currentPage = 1;
+  const PAGE_SIZE = 100;
+  let lastRows = [], lastCols = [];
+
+  // ── DOM refs ───────────────────────────────────────────
+  const statusDot  = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const runBtn     = document.getElementById('runBtn');
+  const clearBtn   = document.getElementById('clearBtn');
+  const queryEl    = document.getElementById('query');
+  const resultsEl  = document.getElementById('resultsArea');
+  const execTimeEl = document.getElementById('execTime');
+  const tableList  = document.getElementById('tableList');
+  const dropZone   = document.getElementById('dropZone');
+  const fileInput  = document.getElementById('fileInput');
+  const fileName   = document.getElementById('fileName');
+
+  // ── Init DuckDB ────────────────────────────────────────
+  async function initDuck() {
+    setStatus('loading', 'Loading DuckDB WASM…');
+    try {
+      const JSDELIVR = 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/dist/';
+      const bundle = await duckdb.selectBundle({
+        mvp: { mainModule: JSDELIVR+'duckdb-mvp.wasm', mainWorker: JSDELIVR+'duckdb-browser-mvp.worker.js' },
+        eh:  { mainModule: JSDELIVR+'duckdb-eh.wasm',  mainWorker: JSDELIVR+'duckdb-browser-eh.worker.js'  },
+      });
+      const worker = new Worker(bundle.mainWorker);
+      const logger = new duckdb.ConsoleLogger();
+      db = new duckdb.AsyncDuckDB(logger, worker);
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      conn = await db.connect();
+      setStatus('ready', 'DuckDB ready');
+      runBtn.disabled = false;
+    } catch(e) {
+      setStatus('error', 'Init failed');
+      console.error(e);
+    }
+  }
+
+  function setStatus(state, msg) {
+    statusDot.className = 'dot ' + state;
+    statusText.textContent = msg;
+  }
+
+  // ── File loading ────────────────────────────────────────
+  async function loadFile(file) {
+    setStatus('loading', 'Loading file…');
+    try {
+      if (conn) { try { await conn.close(); } catch(_) {} }
+      const buf = await file.arrayBuffer();
+      const ext = file.name.split('.').pop().toLowerCase();
+
+      if (ext === 'db' || ext === 'duckdb') {
+        await db.registerFileBuffer(file.name, new Uint8Array(buf));
+        conn = await db.connect();
+        await conn.query(`ATTACH '${file.name}' AS loaded (READ_ONLY)`);
+        // list tables from attached db
+        await refreshTables(true);
+      } else if (ext === 'parquet') {
+        conn = await db.connect();
+        await db.registerFileBuffer(file.name, new Uint8Array(buf));
+        const tbl = file.name.replace(/[^a-zA-Z0-9_]/g, '_');
+        await conn.query(`CREATE OR REPLACE VIEW "${tbl}" AS SELECT * FROM parquet_scan('${file.name}')`);
+        await refreshTables(false);
+        queryEl.value = `SELECT * FROM "${tbl}" LIMIT 100;`;
+      } else if (ext === 'csv') {
+        conn = await db.connect();
+        await db.registerFileBuffer(file.name, new Uint8Array(buf));
+        const tbl = file.name.replace(/[^a-zA-Z0-9_]/g, '_');
+        await conn.query(`CREATE OR REPLACE VIEW "${tbl}" AS SELECT * FROM read_csv_auto('${file.name}')`);
+        await refreshTables(false);
+        queryEl.value = `SELECT * FROM "${tbl}" LIMIT 100;`;
+      }
+
+      fileName.textContent = '📁 ' + file.name;
+      setStatus('ready', 'File loaded');
+    } catch(e) {
+      setStatus('error', 'Load failed');
+      showError(e.message);
+    }
+  }
+
+  async function refreshTables(attached) {
+    let rows;
+    if (attached) {
+      const r = await conn.query(`SELECT table_catalog || '.' || table_schema || '.' || table_name AS name FROM information_schema.tables WHERE table_catalog = 'loaded'`);
+      rows = r.toArray().map(r => r.name);
+    } else {
+      const r = await conn.query(`SHOW TABLES`);
+      rows = r.toArray().map(r => r.name);
+    }
+    tableList.innerHTML = '';
+    if (!rows.length) {
+      tableList.innerHTML = '<li style="padding:6px 14px;font-size:11px;color:var(--muted)">No tables found</li>';
+      return;
+    }
+    rows.forEach(name => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="table-icon">⬡</span>${name}`;
+      li.title = name;
+      li.addEventListener('click', () => {
+        document.querySelectorAll('.table-list li').forEach(l=>l.classList.remove('active'));
+        li.classList.add('active');
+        queryEl.value = `SELECT * FROM ${name} LIMIT 100;`;
+      });
+      tableList.appendChild(li);
+    });
+  }
+
+  // ── Query execution ─────────────────────────────────────
+  async function runQuery() {
+    const sql = queryEl.value.trim();
+    if (!sql || !conn) return;
+    runBtn.disabled = true;
+    execTimeEl.textContent = '';
+    setStatus('loading', 'Running…');
+    const t0 = performance.now();
+    try {
+      const result = await conn.query(sql);
+      const ms = (performance.now() - t0).toFixed(1);
+      const schema = result.schema.fields;
+      lastCols = schema.map(f => ({ name: f.name, type: f.type.toString() }));
+      lastRows = result.toArray().map(r => {
+        const obj = {};
+        lastCols.forEach(c => { obj[c.name] = r[c.name]; });
+        return obj;
+      });
+      currentPage = 1;
+      renderTable();
+      execTimeEl.textContent = `${ms} ms · ${lastRows.length} rows`;
+      setStatus('ready', 'Query OK');
+    } catch(e) {
+      showError(e.message);
+      setStatus('error', 'Query error');
+    }
+    runBtn.disabled = false;
+  }
+
+  function renderTable() {
+    if (!lastRows.length) {
+      resultsEl.innerHTML = '<div class="result-meta"><span class="result-badge ok">OK</span><span class="row-count">0 rows returned</span></div>';
+      return;
+    }
+    const totalPages = Math.ceil(lastRows.length / PAGE_SIZE);
+    const slice = lastRows.slice((currentPage-1)*PAGE_SIZE, currentPage*PAGE_SIZE);
+
+    const headerCells = lastCols.map(c =>
+      `<th>${escHtml(c.name)}<span class="col-type">${escHtml(c.type)}</span></th>`).join('');
+
+    const bodyRows = slice.map(row => {
+      const cells = lastCols.map(c => {
+        const v = row[c.name];
+        if (v === null || v === undefined) return `<td class="null">null</td>`;
+        const t = typeof v;
+        if (t === 'number' || t === 'bigint') return `<td class="num">${v}</td>`;
+        if (t === 'boolean') return `<td class="bool">${v}</td>`;
+        return `<td>${escHtml(String(v))}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    resultsEl.innerHTML = `
+      <div class="result-meta">
+        <span class="result-badge ok">OK</span>
+        <span class="row-count">${lastRows.length.toLocaleString()} rows · page ${currentPage}/${totalPages}</span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button id="prevBtn" ${currentPage<=1?'disabled':''}>← Prev</button>
+        <span class="page-info">${currentPage} / ${totalPages}</span>
+        <button id="nextBtn" ${currentPage>=totalPages?'disabled':''}>Next →</button>
+      </div>`;
+
+    document.getElementById('prevBtn')?.addEventListener('click', () => { currentPage--; renderTable(); });
+    document.getElementById('nextBtn')?.addEventListener('click', () => { currentPage++; renderTable(); });
+  }
+
+  function showError(msg) {
+    resultsEl.innerHTML = `
+      <div class="result-meta"><span class="result-badge err">ERROR</span></div>
+      <div class="error-msg">${escHtml(msg)}</div>`;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Events ─────────────────────────────────────────────
+  runBtn.addEventListener('click', runQuery);
+  clearBtn.addEventListener('click', () => { queryEl.value = ''; resultsEl.innerHTML = '<div class="placeholder"><div class="big">🦆</div><h3>Query cleared</h3></div>'; execTimeEl.textContent=''; });
+
+  queryEl.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); }
+  });
+
+  fileInput.addEventListener('change', e => { if(e.target.files[0]) loadFile(e.target.files[0]); });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('over');
+    if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+  });
+
+  // ── Boot ───────────────────────────────────────────────
+  await initDuck();
+</script>
+</body>
+</html>
