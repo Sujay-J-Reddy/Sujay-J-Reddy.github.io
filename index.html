@@ -233,7 +233,7 @@
 
 <!-- DuckDB WASM (ESM via CDN) -->
 <script type="module">
-  import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
+  import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.33.1-dev57.0/+esm';
 
   // ── State ──────────────────────────────────────────────
   let db = null, conn = null, currentPage = 1;
@@ -257,7 +257,7 @@
   async function initDuck() {
     setStatus('loading', 'Loading DuckDB WASM…');
     try {
-      const JSDELIVR = 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/dist/';
+      const JSDELIVR = 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm/dist/';
       const bundle = await duckdb.selectBundle({
         mvp: { mainModule: JSDELIVR+'duckdb-mvp.wasm', mainWorker: JSDELIVR+'duckdb-browser-mvp.worker.js' },
         eh:  { mainModule: JSDELIVR+'duckdb-eh.wasm',  mainWorker: JSDELIVR+'duckdb-browser-eh.worker.js'  },
